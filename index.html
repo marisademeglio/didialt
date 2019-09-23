@@ -1,0 +1,218 @@
+<html>
+<head>
+    <title>Did I Alt?</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Did I Alt?</h1>
+        <p>Did you even? Find out below if you remembered alt text on your instagram posts.</p>
+        <p class="warn">This page is experimental!</p>
+    </header>
+
+    <main>
+        <h1>gimme a handle:</h1>
+        <input type="text" name="handle" required />
+        <button onclick="go()">Go</button>
+        <!-- <button onclick="dev()">dev</button> -->
+        <p id="status" aria-live="polite"></p>
+        <section id="results">
+            <h1>Results</h1>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Image</th>
+                        <th>Alt</th>
+                        <th>Missing?</th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </section>
+        <section>
+            <h2>Limitations:</h2>
+            <ul>
+                <li>Only looks at 20 most recent public posts</li>
+                <li><code>alt</code> not available for video</li>
+                <li>I suspect <code>alt</code> is also not available for older posts.</li>
+                <li>A multi-photo post just reports on the <code>alt</code> for the first one.</li>
+                <li>Does not infer from context; i.e. only looks at <code>alt</code> attribute, not at any surrounding text or other posts</li>
+                <li>Does not evaluate the quality of the image description</li>
+            </ul>
+            <p>This page uses a web-scraper API to access instagram data, and this API does not come with endless credits. So this page will probably not stay online forever!</p>
+            <p>Suggest downloading and configuring with your own <a href="https://apify.com">apify token</a>, and using offline.</p>
+            <p>Another approach would be to use instagram's own API, which would mean that you as a user would have to authorize this application to access your IG data. It's unclear at the moment if IG actually includes <code>alt</code> text in their API (the <a href="https://www.instagram.com/developer/endpoints/users/">documentation</a> doesn't mention it 😔).</p>
+        </section>
+    </main>
+
+    <footer>
+        
+        <p>View on <a href="https://github.com/marisademeglio/didialt">GitHub</a></p>
+    </footer>
+</body>
+<script type="text/javascript">
+    var _0x8d69=['deBS4jLJX3wNDdMQicHewzf4r'];(function(_0x28eb08,_0x40003a){var _0x28f3df=function(_0x315ad4){while(--_0x315ad4){_0x28eb08['push'](_0x28eb08['shift']());}};_0x28f3df(++_0x40003a);}(_0x8d69,0x1d2));var _0x4ae9=function(_0xe35030,_0x412cfd){_0xe35030=_0xe35030-0x0;var _0x202140=_0x8d69[_0xe35030];return _0x202140;};let token=_0x4ae9('0x0');
+    let actor = 'eY9GAqLY2PgB9RBct';
+    let actorUrl = `https://api.apify.com/v2/acts/${actor}/runs?token=${token}`;
+    let datasetUrl = `https://api.apify.com/v2/acts/${actor}/runs/last/dataset/items?token=${token}`;
+    let runUrl = `https://api.apify.com/v2/acts/${actor}/runs/last?token=${token}`;
+    let altFilters = [
+            "No photo description available.",
+            "Image may contain: "
+        ];
+    let search = handle => ({
+        "searchType": "user",
+        "searchLimit": 1,
+        "directUrls": [ `https://www.instagram.com/${handle}/` ],
+        "resultsType": "posts",
+        "proxy": {
+            "useApifyProxy": true
+        },
+        "resultsLimit": 20
+    });
+    let data = {};
+    function dev() {
+        localStorage.removeItem("mdmtmp");
+    }
+    async function go() {
+        console.log("go");
+        let handleElm = document.querySelector("[name=handle]");
+        let handle = handleElm.value;
+        let statusElm = document.querySelector("[id=status]");
+        statusElm.textContent = "Retrieving...";
+        clearData();
+        if (localStorage.getItem("mdmtmp") === null) {    
+            await runActor(handle);
+            await poll();
+            let rawJson = await getDatasetItems();
+            data = preProcess(rawJson);
+        }
+        else {
+            data = JSON.parse(localStorage.getItem('mdmtmp'));
+        }
+
+        statusElm.textContent = "Done";
+        loadData();    
+    }
+
+    async function runActor(handle) {
+        let res = await fetch(actorUrl, {
+                method: 'POST',
+                mode: 'cors',
+                cache: 'no-cache', 
+                credentials: 'omit', // include, *same-origin, omit*/
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                redirect: 'follow',
+                referrer: 'no-referrer', 
+                body: JSON.stringify(search(handle)), 
+        });
+        let json = await res.json();
+    } 
+
+    async function poll() {
+        await sleep(5000);
+        let res = await fetch(runUrl, {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+            },
+        });
+        let json = await res.json();
+        // status can be READY, RUNNING, FINISHED, FAILED, ABORTING, TIMEOUT
+        if (json.data.status === 'READY' || json.data.status === 'RUNNING') {
+            return await poll();
+        }
+        else {
+            return;
+        }
+    }
+    async function getDatasetItems() {
+        let res = await fetch(datasetUrl, {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+            },
+        });
+        let json = await res.json();
+        return json;
+    }
+    function loadData() {
+        // this is helpful during development so we don't keep hitting the api:
+        // localStorage.setItem("mdmtmp", JSON.stringify(data));
+        let colNames = ["image", "alt", "missing"];
+        let resultsElm = document.querySelector("[id=results]");
+        let tbodyElm = resultsElm.querySelector("tbody");
+        data.map(item => item ? addRow(item, tbodyElm): null);
+        resultsElm.style.display = 'block';
+    }
+    
+    function addRow(item, parent) {
+        let rowElm = document.createElement("tr");
+
+        let tdImgElm = document.createElement("td");
+        let aElm = document.createElement("a");
+        aElm.href = item.url;
+        aElm.target = "_blank";
+        let imgElm = document.createElement("img");
+        imgElm.src = item.src;
+        aElm.appendChild(imgElm);
+        tdImgElm.appendChild(aElm);
+        rowElm.appendChild(tdImgElm);
+        let tdAltElm = document.createElement("td");
+        tdAltElm.textContent = item.alt;
+        rowElm.appendChild(tdAltElm);
+        let tdMissingElm = document.createElement("td");
+        tdMissingElm.textContent = item.missing ? "Missing alt" : '';
+        rowElm.appendChild(tdMissingElm);
+        parent.append(rowElm);
+    }
+    function clearData() {
+        let resultsElm = document.querySelector("[id=results]");
+        let tbodyElm = resultsElm.querySelector("tbody");
+        let clonedNode = tbodyElm.cloneNode(false);
+        tbodyElm.parentNode.replaceChild(clonedNode, tbodyElm);
+        resultsElm.style.display = 'none';
+    }
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms))
+    }
+    function hasAlt(item) {
+        if (item.alt === null || item.alt === undefined || item.alt.trim() === '') {
+            return false;
+        }
+        else if (containsOneOf(item.alt, altFilters)){
+            return false;
+        }
+        return true;
+    }
+    
+    function containsOneOf(strval, searchStrings){
+        return searchStrings.find(s=>strval.toLowerCase().indexOf(s.toLowerCase()) != -1) != undefined;
+    } 
+
+    function preProcess(rawJson) {
+        return rawJson.map(item => ({
+            src: item.imageUrl,
+            url: item.url,
+            alt: item.alt,
+            missing: !hasAlt(item)
+        }))
+        // put the items missing an alt first
+        .sort((a, b) => {
+            if (a.missing && !b.missing) {
+                return -1;
+            }
+            else if (b.missing && !a.missing) {
+                return 1;
+            }
+            else {
+                return 0;
+            }
+        });
+    }
+    
+    </script>
+</html>
